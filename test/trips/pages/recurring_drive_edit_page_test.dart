@@ -124,6 +124,19 @@ void main() {
       expect(intervalSizeField.hasError, isTrue);
     });
 
+    testWidgets('Interval Size zero', (WidgetTester tester) async {
+      await pumpMaterial(tester, RecurringDriveEditPage(recurringDrive));
+
+      await tester.enterText(find.byKey(const Key('intervalSizeField')), '0');
+      await tester.pump();
+
+      await scrollAndTap(tester, find.byKey(const Key('saveRecurringDriveButton')));
+      await tester.pump();
+
+      final FormFieldState intervalSizeField = tester.state(find.byKey(const Key('intervalSizeField')));
+      expect(intervalSizeField.hasError, isTrue);
+    });
+
     group('Back button', () {
       setUp(() {
         recurringDrive = RecurringDriveFactory().generateFake(

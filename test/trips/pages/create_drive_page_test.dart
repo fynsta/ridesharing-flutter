@@ -269,6 +269,21 @@ void main() {
         final FormFieldState intervalSizeField = tester.state(find.byKey(const Key('intervalSizeField')));
         expect(intervalSizeField.hasError, isTrue);
       });
+
+      testWidgets('Interval Size zero', (WidgetTester tester) async {
+        await pumpMaterial(tester, const CreateDrivePage());
+
+        await tapRecurring(tester);
+
+        await tester.enterText(find.byKey(const Key('intervalSizeField')), '0');
+        await tester.pump();
+
+        await scrollAndTap(tester, find.byKey(const Key('createDriveButton')));
+        await tester.pump();
+
+        final FormFieldState intervalSizeField = tester.state(find.byKey(const Key('intervalSizeField')));
+        expect(intervalSizeField.hasError, isTrue);
+      });
     });
 
     group('Create drive', () {

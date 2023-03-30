@@ -37,7 +37,8 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
   final TextEditingController recurrenceIntervalSizeController = TextEditingController();
   final TextEditingController recurrenceIntervalTypeController = TextEditingController();
 
-  late RecurrenceEndChoice _endChoice;
+  // The current end choice from the dialog, only applied when valid
+  late RecurrenceEndChoice dialogEndChoice;
 
   RecurrenceEndChoiceDate customEndDateChoice = RecurrenceEndChoiceDate(null, isCustom: true);
   final TextEditingController customEndDateController = TextEditingController();
@@ -51,7 +52,6 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
   final TextEditingController customEndOccurrenceController = TextEditingController();
 
   final TextEditingController endChoiceController = TextEditingController();
-  void rebuildEndChoiceController() => endChoiceController.text = _endChoice.getName(context);
 
   String? validationError;
 
@@ -62,8 +62,6 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
     recurrenceOptions = widget.recurrenceOptions;
     originalRecurrenceRule = widget.originalRecurrenceRule ?? recurrenceOptions.recurrenceRule;
     predefinedEndChoices = widget.predefinedEndChoices;
-
-    _endChoice = recurrenceOptions.endChoice;
   }
 
   @override
@@ -73,8 +71,9 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
     // We prefill this field when it's not selected yet
     customEndIntervalTypeController.text =
         customEndIntervalChoice.intervalType?.getName(context, customEndIntervalChoice.intervalSize ?? 2) ?? '';
-    setEndChoice(_endChoice);
-    rebuildEndChoiceController();
+
+    endChoiceController.text = recurrenceOptions.endChoice.getName(context);
+    setDialogEndChoice(recurrenceOptions.endChoice, setDialogValues: true);
 
     super.didChangeDependencies();
   }
@@ -92,17 +91,18 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
     customEndOccurrenceController.dispose();
   }
 
-  bool validate({bool createError = true}) {
-    final String? error = _endChoice.validate(context);
+  bool validateDialogEndChoice({bool createError = true}) {
+    final String? error = dialogEndChoice.validate(context);
     if (createError || error == null) {
       validationError = error;
     }
     return validationError == null;
   }
 
-  void setEndChoice(RecurrenceEndChoice value) {
-    _endChoice = value;
-    if (value.isCustom) {
+  void setDialogEndChoice(RecurrenceEndChoice value, {bool setDialogValues = false}) {
+    dialogEndChoice = value;
+
+    if (setDialogValues && value.isCustom) {
       if (value is RecurrenceEndChoiceDate) {
         customEndDateChoice = value;
         if (value.date != null) customEndDateController.text = localeManager.formatDate(value.date!);
@@ -122,14 +122,13 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
     }
   }
 
-  RecurrenceEndChoice getRecurrenceEndChoice(RecurrenceEndType type) {
-    switch (type) {
-      case RecurrenceEndType.date:
-        return customEndDateChoice;
-      case RecurrenceEndType.interval:
-        return customEndIntervalChoice;
-      case RecurrenceEndType.occurrence:
-        return customEndOccurrenceChoice;
+  void trySetEndChoiceFromDialog() {
+    // If it is valid, we apply it
+    if (dialogEndChoice.validate(context) == null) {
+      setState(() {
+        recurrenceOptions.endChoice = dialogEndChoice.copyWith();
+        endChoiceController.text = recurrenceOptions.endChoice.getName(context);
+      });
     }
   }
 
@@ -170,11 +169,17 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
         if (value == null || value.isEmpty) {
           return S.of(context).recurrenceIntervalValidationIntervalNull;
         }
+        if (int.tryParse(value) == 0) {
+          return S.of(context).recurrenceIntervalValidationIntervalZero;
+        }
         return null;
       },
       onChanged: (String value) {
         setState(() {
-          recurrenceOptions.recurrenceIntervalSize = int.tryParse(value) ?? recurrenceOptions.recurrenceIntervalSize;
+          final int? parsedValue = int.tryParse(value);
+          if (parsedValue != null && parsedValue > 0) {
+            recurrenceOptions.recurrenceIntervalSize = parsedValue;
+          }
         });
       },
       key: const Key('intervalSizeField'),
@@ -220,7 +225,7 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
         builder: (BuildContext context, void Function(VoidCallback) innerSetState) {
           void onChanged(RecurrenceEndChoice? value) {
             innerSetState(() {
-              setEndChoice(value!);
+              setDialogEndChoice(value!);
             });
           }
 
@@ -239,20 +244,23 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
                           contentPadding: EdgeInsets.zero,
                           title: Text(recurringEndChoice.getName(context, short: true)),
                           value: recurringEndChoice,
-                          groupValue: _endChoice,
+                          groupValue: dialogEndChoice,
                           onChanged: onChanged,
                           key: Key('predefinedEndChoice$index'),
                         );
                       } else {
                         final RecurrenceEndType recurrenceEndType =
                             RecurrenceEndType.values[index - predefinedEndChoices.length];
-                        final RecurrenceEndChoice recurrenceEndChoiceCustom = getRecurrenceEndChoice(recurrenceEndType);
-                        final bool currentlySelected = _endChoice == recurrenceEndChoiceCustom;
+                        final bool currentlySelected =
+                            dialogEndChoice.type == recurrenceEndType && dialogEndChoice.isCustom;
 
+                        RecurrenceEndChoice recurrenceEndChoiceCustom;
                         Widget content;
 
                         switch (recurrenceEndType) {
                           case RecurrenceEndType.date:
+                            recurrenceEndChoiceCustom = customEndDateChoice;
+
                             final Widget datePicker = TextFormField(
                               decoration: InputDecoration(
                                 border: const OutlineInputBorder(),
@@ -283,6 +291,8 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
                             );
                             break;
                           case RecurrenceEndType.interval:
+                            recurrenceEndChoiceCustom = customEndIntervalChoice;
+
                             final Widget intervalSizeField = TextFormField(
                               decoration: const InputDecoration(
                                 border: OutlineInputBorder(),
@@ -350,6 +360,8 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
                             );
                             break;
                           case RecurrenceEndType.occurrence:
+                            recurrenceEndChoiceCustom = customEndOccurrenceChoice;
+
                             final Widget occurenceField = TextFormField(
                               decoration: const InputDecoration(
                                 border: OutlineInputBorder(),
@@ -380,7 +392,7 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
                           contentPadding: EdgeInsets.zero,
                           title: content,
                           value: recurrenceEndChoiceCustom,
-                          groupValue: _endChoice,
+                          groupValue: dialogEndChoice,
                           onChanged: onChanged,
                           key: Key('recurrenceEndChoice$index'),
                         );
@@ -388,7 +400,7 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
                     },
                   ),
                   const SizedBox(height: 20),
-                  if (!validate(createError: false))
+                  if (!validateDialogEndChoice(createError: false))
                     Text(
                       S.of(context).recurrenceEndError(validationError!),
                       style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
@@ -403,13 +415,8 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
                 child: Text(S.of(context).okay),
                 onPressed: () {
                   innerSetState(() {
-                    final bool valid = validate();
+                    final bool valid = validateDialogEndChoice();
                     if (valid) {
-                      // Update the recurrence options in the parent widget
-                      setState(() {
-                        rebuildEndChoiceController();
-                        recurrenceOptions.endChoice = _endChoice;
-                      });
                       Navigator.of(context).pop();
                     }
                   });
@@ -419,6 +426,6 @@ class EditRecurrenceOptionsState extends State<EditRecurrenceOptions> {
           );
         },
       ),
-    );
+    ).then((RecurrenceEndChoice? value) => trySetEndChoiceFromDialog());
   }
 }
